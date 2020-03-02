@@ -1,0 +1,111 @@
+# Elixir Workshop -- Nerves -- 29 February 2020
+
+"Friends don't let friends run Ubuntu on embedded devices."
+
+* Definitions
+** Host
+*** doing the dev work; macbook, thinkpad, etc.
+*** build on this
+** Target
+*** ARM processor on RPi
+*** deploy to this
+** Toolchain
+*** tools required to build code for target, ie compilers, linkers, C runtime
+** System
+*** lean Buildroot-based Linux root filesystem that has been customized and cross-compiled for a particular target
+** Firmware bundle
+*** sngle file tghat has system, application, etc
+** Firmware image
+*** large binary file generated from the firmware bunlde that is a bit-for-bit image of a device's non-volatile memory
+
+
+* Overview of Nerves
+
+** #1 priority -- don't make that thing a brick
+** MBR: master boot record; has 4 partitions
+*** boot A, boot B, root file system A, root file system B are all read-only
+*** application data partition is write, could be corrupted, so prepare for that possibility
+*** switched to F2FS (whatever the fuck that is)
+*** nerves_system_* size is ~20 MB; linux kernel, erlang vm, etc
+*** can make images smaller by stripped out unneeded feature support, ie audio jack
+*** kiosk_system_* though, is like 120 MB
+** Artifact
+*** app_name | host | vsn | checksum | .tar.gz
+*** Tar files: ~/.nerves/dl
+*** Unpackaged artifacts: ~/.nerves/artifacts
+** Supports
+*** RPi, beaglebones, x86_64, custom hardware (Buildroot)
+*** will run nearly everywhere embedded linux runs; just takes a little work to get the configuration correct
+*** will not run on arduino (which is a microcontroller, not a microprocessor)
+*** linux is soft realtime, it has a scheduler and does timesharing
+*** precise timing does not work with microprocessor (like with motors)
+*** Farmbot gardening robot -- stepper motor control is easy with microcontroller, not with micrprocessor
+*** microprocessor can control microcontroller, which is what it's good at
+
+* What We're Building
+** Kiosk
+*** what can they be used for
+**** digital signage
+**** control surface
+**** industrial automation
+**** displaying remote content
+**** tricking web devs into being embedded systems devs
+*** not growing the devil's lettuce
+*** home hydroponics system
+*** reality is, turning off and on light switches at different times
+** Initial Goals
+*** build and burn firmware
+*** connect to Nerves device over SSH
+*** push updates over SSH
+** Creating our first project
+10334  2/29/2020 09:15  md kiosk_training && cd $_
+10335  2/29/2020 09:15  mix nerves.new kiosk_nerves --nerves-pack --target rpi3
+10337  2/29/2020 09:23  cd kiosk_nerves
+# now make changes to the mix.exs file -- # Dependencies for specific targets: {:kiosk_system_rpi3, "~> 1.9", runtime: false, targets: :rpi3},
+10339  2/29/2020 09:26  MIX_TARGET=rpi3 mix deps.update --all
+
+confirm that it works: `iex -S mix` and then `iex(1)> KioskNerves.hello` which
+should output `:world`
+*** config,target.exs: just change to eth0, use directNet
+*** $> export MIX_TARGET=rpi3 # don't have to keep exporting
+*** $> mix firmware
+*** $> mix burn # uses a local SSH key to make sure the machine can reconnect later
+*** move the micro sd card to the rpi3, turn it on, wait for it to boot up
+*** `ping nerves.local` to see traffic
+*** `ssh nerves.local` to connect
+*** running tiny mdns server to respond to `nerves.local`; can make a change in config/target.exs file
+*** exit the ssh connection: `~.` you won't see it, but it'll just exit your shit; even if the connection is totally fucked
+*** Helpers
+**** Toolshed: analogs for *nix bash commands
+*** To update code on target
+**** make changes
+**** mix firmware
+**** mix firmware.gen.script
+**** ./upload.sh is generated; run that command
+*** Logger
+**** use `require Logger` and `Logger.debug`, etc
+**** connect via ssh
+**** once those functions are run, the logs are available via RingLogger -- RingLogger.attach and then do the thing that outputs the log message
+***** if you need to see something that happened earlier, RingLogger.next to see it all; to search for something, RingLogger.grep(Elixir regex sigil)
+*** Shoehorn
+**** separates application code from mission-critical code
+**** if an application crashes, it shouldn't take down the whole OS; this is similar in concept
+*** Revert
+**** `Nerves.Runtime.revert` but this might not work as expected -- had to put the SD card back in the writer and then re-run the burn command
+** Displaying
+*** uses webengine_kiosk which uses qt
+**** if mix compile doesn't work, try `which qmake`; if not found, `brew link qt5 --force` or `QMAKE=/usr/local/opt/qt/bin/qmake mix compile`
+** Supervision tree
+*** kiosk_nerves/lib/kiosk_nerves/application.ex -- has two `def children` for the supervisor to start things for host and target separately, like deps and devDeps
+** Adding config to run in "host mode," which doesn't run in fullscreen, for instance: in config/config.exs
+** If needing to use pid to reference a process that we start using the supervision tree's "name" tuple, we can use the value of the "name" property in place of the pid
+** Doing Work
+*** Make changes, `mix firmware`, `./upload.sh`, and after it reboots, `ssh nerves.local`
+** Ponchos vs Umbrellas
+*** umbrella problem: everything from the top-down gets compiled; not ideal when developing against host and target devices
+*** poncho solves this by allowing side-by-side compiles
+** Troubleshoot
+*** Using socat, get IP address of device, subtract 1 from the last block of numbers, go to http://172.31.43.93:9223/ in host browser
+** Cool Things
+*** In target's iex: `File.write! "/sys/class/backlight/rpi_backlight/brightness", "99"` to change brightness of device in realtime
+*** Can create a module to change these files, and therefore, properties of the hardware

@@ -1,0 +1,6 @@
+<%= link "Rainbow", to: Routes.live_path(@conn, KioskPhxWeb.RainbowLive) %></li>
+|
+<%= link "Brightness", to: Routes.live_path(@conn, KioskPhxWeb.BrightnessLive)
+    %></li>
+|
+💩
